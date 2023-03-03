@@ -74,6 +74,7 @@ For contribution guidelines, see [Code contribution guide](https://docs.spryker.
 |                 | redis        | 6.2          | &check;     |                                    |
 | search          | elastic      | 5.6*         | &check;     | https://www.elastic.co/support/eol |
 |                 |              | 6.8          | &check;     | https://www.elastic.co/support/eol |
+|                 |              | 7.5          | &check;     | https://www.elastic.co/support/eol |
 |                 |              | 7.6          | &check;     |                                    |
 |                 |              | 7.10         | &check;     |                                    |
 |                 | opensearch   | 1.3          | &check;     |                                    |
