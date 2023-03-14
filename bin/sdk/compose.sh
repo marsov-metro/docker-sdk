@@ -2,7 +2,7 @@
 
 # shellcheck disable=SC2155
 
-require docker docker-compose tr awk wc sed grep
+require docker tr awk wc sed grep
 
 Registry::Flow::addBoot "Compose::verboseMode"
 
@@ -44,6 +44,17 @@ function Compose::ensureCliRunning() {
 function Compose::exec() {
     local tty
     [ -t -0 ] && tty='' || tty='-T'
+
+	# For avoid https://github.com/docker/compose/issues/9104
+	local ttyDisabledKey='docker_compose_tty_disabled'
+	local lastArg="${@: -1}"
+	if [ "${DOCKER_COMPOSE_TTY_DISABLED}" = "${lastArg}" ]; then
+		if  [ "${DOCKER_COMPOSE_TTY_DISABLED}" = "${ttyDisabledKey}" ]; then
+			tty='-T'
+		fi
+
+		set -- "${@:1:$(($#-1))}"
+	fi
 
     Compose::command exec ${tty} \
         -e COMMAND="${*}" \
@@ -124,6 +135,10 @@ function Compose::up() {
 
     Registry::Flow::runBeforeUp
 
+    if [ "${doBuild}" = "--force" ]; then
+      Compose::cleanSourceDirectory
+    fi
+
     Images::buildApplication ${noCache} ${doBuild}
     Codebase::build ${noCache} ${doBuild}
     Assets::build ${noCache} ${doAssets}
@@ -138,14 +153,21 @@ function Compose::up() {
 }
 
 function Compose::run() {
+
     Registry::Flow::runBeforeRun
 
     Console::verbose "${INFO}Running Spryker containers${NC}"
     sync start
-    Compose::command up -d --remove-orphans \
-      --scale "webdriver=$([ -n "${SPRYKER_TESTING_ENABLE}" ] && echo 1 || echo 0)" \
-      --scale "scheduler=$([ -n "${SPRYKER_TESTING_ENABLE}" ] && echo 0 || echo 1)" \
-      "${@}"
+
+    Compose::command --compatibility up -d --remove-orphans --quiet-pull "${@}"
+
+    if [ -n "${SPRYKER_TESTING_ENABLE}" ] && Service::isServiceExist scheduler; then
+        Compose::command --compatibility stop scheduler
+    fi
+
+    if [ -z "${SPRYKER_TESTING_ENABLE}" ]; then
+        Compose::command --compatibility stop webdriver
+    fi
 
     # Note: Compose::run can be used for running only one container, e.g. CLI.
     Registry::Flow::runAfterRun
@@ -184,4 +206,14 @@ function Compose::cleanEverything() {
     Console::verbose "${INFO}Stopping and removing all Spryker containers and volumes${NC}"
     Compose::command down -v --remove-orphans --rmi all
     Registry::Flow::runAfterDown
+}
+
+function Compose::cleanSourceDirectory() {
+  local projectPath
+  local srcGeneratedPath='src/Generated'
+
+  projectPath=$(pwd)
+  if [ -d "${projectPath}/${srcGeneratedPath}" ]; then
+      rm -rf "${projectPath}/${srcGeneratedPath}"
+  fi
 }

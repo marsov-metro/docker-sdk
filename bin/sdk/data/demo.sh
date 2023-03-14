@@ -6,15 +6,14 @@ function Data::isLoaded() {
 }
 
 function Data::load() {
-
     local brokerInstalled=""
     local schedulerSuspended=""
     local verboseOption=$([ "${VERBOSE}" == "1" ] && echo -n " -vvv" || echo -n '')
+    local requireServices=(database broker search key_value_store)
 
-    Runtime::waitFor database
-    Runtime::waitFor broker
-    Runtime::waitFor search
-    Runtime::waitFor key_value_store
+    for serviceName in "${requireServices[@]}" ; do
+      Runtime::waitFor "${serviceName}"
+    done
 
     local force=''
     if [ "$1" == '--force' ]; then
@@ -29,19 +28,26 @@ function Data::load() {
         SPRYKER_CURRENT_REGION="${REGION}"
         SPRYKER_CURRENT_STORE="${STORES[0]}"
 
-        if [ -z "${force}" ] && Data::isLoaded; then
+        if Service::isServiceExist "database" && [ -z "${force}" ] && Data::isLoaded; then
             continue
         fi
 
-        if [ -z "${brokerInstalled}" ]; then
+        if Service::isServiceExist "broker" && [ -z "${brokerInstalled}" ]; then
             Service::Broker::install
             brokerInstalled=1
         fi
 
-        if [ -z "${schedulerSuspended}" ]; then
+        if Service::isServiceExist "scheduler" &&[ -z "${schedulerSuspended}" ]; then
             schedulerSuspended=1
             Service::Scheduler::pause
             Registry::Trap::addExitHook 'resumeScheduler' 'Service::Scheduler::unpause'
+        fi
+
+        Console::info "Loading demo data for ${SPRYKER_CURRENT_REGION} region."
+        Compose::exec "vendor/bin/install${verboseOption} -r ${SPRYKER_PIPELINE} -s clean-storage -s init-storage"
+
+        if Service::isServiceExist "database"; then
+            Database::init
         fi
 
         for store in "${STORES[@]}"; do
@@ -51,11 +57,8 @@ function Data::load() {
         done
 
         SPRYKER_CURRENT_STORE="${STORES[0]}"
-        Console::info "Loading demo data for ${SPRYKER_CURRENT_REGION} region."
-        Database::init
-
         local demoDataSection=${1:-demodata}
-        Compose::exec "vendor/bin/install${verboseOption} -r ${SPRYKER_PIPELINE} -s clean-storage -s init-storage -s init-storages-per-region -s ${demoDataSection}"
+        Compose::exec "vendor/bin/install${verboseOption} -r ${SPRYKER_PIPELINE} -s init-storages-per-region -s ${demoDataSection}"
     done
 
     Registry::Trap::releaseExitHook 'resumeScheduler'

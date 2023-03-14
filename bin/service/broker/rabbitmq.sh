@@ -1,6 +1,10 @@
 #!/bin/bash
 
 function Service::Broker::install() {
+    if ! Service::isServiceExist broker; then
+        return;
+    fi
+
     Runtime::waitFor broker
 
     Console::start "${INFO}Configuring broker...${NC}"
@@ -8,6 +12,13 @@ function Service::Broker::install() {
     local output
     local tty
     [ -t -0 ] && tty='' || tty='-T'
+
+    # For avoid https://github.com/docker/compose/issues/9104
+    local ttyDisabledKey='docker_compose_tty_disabled'
+
+    if [ "${DOCKER_COMPOSE_TTY_DISABLED}" = "${ttyDisabledKey}" ]; then
+      tty='-T'
+    fi
 
     # shellcheck disable=SC2016
     output=$(

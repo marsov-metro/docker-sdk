@@ -2,11 +2,7 @@
 
 # shellcheck disable=SC2034
 set -e
-
 SELF_SCRIPT=${SELF_SCRIPT:-$0}
-
-# Overridable
-DOCKER_COMPOSE_SUBSTITUTE='docker-compose'
 
 pushd "${BASH_SOURCE%/*}" >/dev/null
 . ./bin/framework.sh
@@ -16,6 +12,9 @@ import environment/cross-platform.sh
 import environment/docker.sh
 import environment/docker-compose.sh
 import environment/composer.sh
+
+# Overridable
+DOCKER_COMPOSE_SUBSTITUTE=$(Environment::getDockerComposeSubstitute)
 
 # Help intro
 import command/deploy.sh
@@ -80,9 +79,10 @@ import installer/autoload-cache.sh
 {% endif %}
 
 # Services
-import service/database/{{ services['database']['engine'] }}.sh
-import service/broker/{{ services['broker']['engine'] }}.sh
-import service/scheduler/{{ services['scheduler']['engine'] }}.sh
+import service/service.sh
+import service/database/{{ services['database']['engine'] | default('mysql') }}.sh
+import service/broker/{{ services['broker']['engine'] | default('rabbitmq') }}.sh
+import service/scheduler/{{ services['scheduler']['engine'] | default('jenkins') }}.sh
 
 # Implementation
 import sdk/compose.sh
@@ -131,11 +131,17 @@ readonly KNOWN_HOSTS="{{ _knownHosts | default("") }}"
 readonly SPRYKER_BUILD_HASH="${SPRYKER_BUILD_HASH}"
 readonly SPRYKER_BUILD_DATE="${SPRYKER_BUILD_DATE}"
 readonly SPRYKER_REPOSITORY_HASH="${SPRYKER_BUILD_HASH:-"$(git rev-parse --verify HEAD 2>/dev/null || echo "head")"}"
+readonly SPRYKER_MAINTENANCE_MODE_ENABLED="{{ docker['maintenance']['enabled'] | default('false') }}"
 
 # Specific variables
 {% for serviceName, serviceData in services %}
 {% set engine = serviceData['engine'] | lower %}
 {% include "service/" ~ engine ~ "/" ~ serviceName ~ ".bash.twig" ignore missing with _context %}
+{% endfor %}
+
+# NodeJS variables
+{% for envName, envValue in _node_npm_config %}
+readonly {{ envName }}="{{ "${%s:-%s}" | format(envName, envValue) }}"
 {% endfor %}
 
 # Variables from environment
@@ -208,6 +214,9 @@ export BLACKFIRE_CLIENT_TOKEN=${BLACKFIRE_CLIENT_TOKEN}
 export TIDEWAYS_APIKEY=${TIDEWAYS_APIKEY}
 export TIDEWAYS_CLI_ENABLED=${TIDEWAYS_CLI_ENABLED}
 export TIDEWAYS_ENVIRONMENT_NAME=${TIDEWAYS_ENVIRONMENT_NAME}
+
+{# For avoid https://github.com/docker/compose/issues/9104 #}
+export DOCKER_COMPOSE_TTY_DISABLED="$(Environment::getDockerComposeTTY)"
 
 Registry::Flow::runBoot
 
